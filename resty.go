@@ -32,6 +32,7 @@ type restyTracing struct {
 }
 
 func New(client *resty.Client, opts ...options) {
+	client = client.EnableTrace()
 	tracing := &restyTracing{
 		client:                client,
 		tracerProvider:        otel.GetTracerProvider(),
@@ -53,17 +54,7 @@ func New(client *resty.Client, opts ...options) {
 
 func (r *restyTracing) onBeforeRequest() resty.RequestMiddleware {
 	return func(client *resty.Client, request *resty.Request) error {
-		ctx, span := r.tracer.Start(request.Context(), r.spanNameFormatter(nil, request), r.spanOptions...)
-		span.SetAttributes(
-			attribute.String("http.method", request.Method),
-			attribute.String("http.url", request.URL),
-			attribute.String("http.host", request.RawRequest.Host),
-			attribute.String("http.path", request.RawRequest.URL.Path),
-			attribute.String("http.scheme", request.RawRequest.URL.Scheme),
-			attribute.Int("http.content_length", int(request.RawRequest.ContentLength)),
-			attribute.String("http.query", request.RawRequest.URL.RawQuery),
-			attribute.String("http.client_ip", request.RawRequest.RemoteAddr),
-		)
+		ctx, _ := r.tracer.Start(request.Context(), r.spanNameFormatter(nil, request), r.spanOptions...)
 
 		r.propagators.Inject(ctx, propagation.HeaderCarrier(request.Header))
 		request.SetContext(ctx)
@@ -79,15 +70,33 @@ func (r *restyTracing) onAfterResponse() resty.ResponseMiddleware {
 		}
 
 		span.SetAttributes(
-			attribute.Int("http.status_code", res.StatusCode()),
-			attribute.String("http.status_text", res.Status()),
-			attribute.Int64("http.response_content_length", res.Size()),
-			attribute.String("http.response_body", string(res.Body())),
-			attribute.Float64("http.response_time_ms", res.Time().Seconds()*1000),
-			attribute.String("http.protocol", res.Request.RawRequest.Proto),
-			attribute.String("http.connection_reused", fmt.Sprintf("%v", res.Request.RawRequest.Response.Close)),
-			attribute.String("http.remote_address", res.Request.RawRequest.RemoteAddr),
-			attribute.Int("http.request_content_length", int(res.Request.RawRequest.ContentLength)),
+			attribute.Int("response.status_code", res.StatusCode()),
+			attribute.String("response.status", res.Status()),
+			attribute.String("response.proto", res.Proto()),
+			attribute.String("response.time", res.Time().String()),
+			attribute.String("response.received_at", res.ReceivedAt().String()),
+		)
+
+		if r.attributeResponseBody {
+			span.SetAttributes(
+				attribute.String("response.body", fmt.Sprintf("%v", res.String())),
+			)
+		}
+
+		ti := res.Request.TraceInfo()
+		span.SetAttributes(
+			attribute.String("trace.dns_lookup", ti.DNSLookup.String()),
+			attribute.String("trace.conn_time", ti.ConnTime.String()),
+			attribute.String("trace.tcp_conn_time", ti.TCPConnTime.String()),
+			attribute.String("trace.tls_handshake", ti.TLSHandshake.String()),
+			attribute.String("trace.server_time", ti.ServerTime.String()),
+			attribute.String("trace.response_time", ti.ResponseTime.String()),
+			attribute.String("trace.total_time", ti.TotalTime.String()),
+			attribute.Bool("trace.is_conn_reused", ti.IsConnReused),
+			attribute.Bool("trace.is_conn_was_idle", ti.IsConnWasIdle),
+			attribute.String("trace.conn_idle_time", ti.ConnIdleTime.String()),
+			attribute.Int("trace.request_attempt", ti.RequestAttempt),
+			attribute.String("trace.remote_addr", ti.RemoteAddr.String()),
 		)
 		span.SetName(r.spanNameFormatter(res, res.Request))
 

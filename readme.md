@@ -3,7 +3,7 @@
 ## Installation
 To install `resty opentelemetry`, use the following Go command:
 ```shell
-go get github.com/SyaibanAhmadRamadhan/resty-otel@v1.241101.2354
+go get github.com/SyaibanAhmadRamadhan/resty-otel@v1.241103.0218
 ```
 
 ## Tag Versioning Example: `v1.231215.2307`
